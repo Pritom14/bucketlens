@@ -1,0 +1,61 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Pritom14/bucketlens",
+  "title": "bucketlens",
+  "description": "Read the PDFs, spreadsheets and CSVs in your own S3 or R2 bucket: outlines, pages, search and SQL, no downloads.",
+  "repository": {
+    "url": "https://github.com/Pritom14/bucketlens",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "bucketlens",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "BUCKETLENS_BUCKET",
+          "description": "Bucket to read",
+          "isRequired": true
+        },
+        {
+          "name": "BUCKETLENS_ACCESS_KEY_ID",
+          "description": "Access key that can read the bucket and write under .bucketlens/",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "BUCKETLENS_SECRET_ACCESS_KEY",
+          "description": "Secret for that access key",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "BUCKETLENS_R2_ACCOUNT_ID",
+          "description": "Cloudflare account ID (for R2; sets the endpoint for you)"
+        },
+        {
+          "name": "BUCKETLENS_ENDPOINT",
+          "description": "S3 endpoint URL (for AWS S3, MinIO or other S3-compatible storage)"
+        },
+        {
+          "name": "BUCKETLENS_REGION",
+          "description": "Region (auto for R2)",
+          "default": "us-east-1"
+        }
+      ]
+    }
+  ]
+}

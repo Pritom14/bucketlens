@@ -1,5 +1,7 @@
 # bucketlens
 
+<!-- mcp-name: io.github.Pritom14/bucketlens -->
+
 [![ci](https://github.com/Pritom14/bucketlens/actions/workflows/ci.yml/badge.svg)](https://github.com/Pritom14/bucketlens/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776ab)](pyproject.toml)
 [![license](https://img.shields.io/badge/license-Apache--2.0-4f46e5)](LICENSE)
@@ -54,17 +56,44 @@ Details and earlier runs on synthetic data: [benchmarks/RESULTS.md](benchmarks/R
 
 ## Quick start
 
+bucketlens is an MCP server. Install it, point it at a bucket, and add it to any MCP client.
+
 ```bash
 pip install bucketlens            # or: uv tool install bucketlens
 bucketlens setup                  # bucket + keys, typed hidden, saved to ~/.config/bucketlens/config.env
 bucketlens index                  # parse every PDF, XLSX and CSV once (optional; files are also indexed on first use)
+```
+
+**Claude Code**
+
+```bash
 claude mcp add bucketlens -- bucketlens serve
 ```
 
-Any MCP client works: run `bucketlens serve` over stdio.
+**Claude Desktop, Cursor, or any client that takes a JSON config** (no install needed with `uvx`):
+
+```json
+{
+  "mcpServers": {
+    "bucketlens": {
+      "command": "uvx",
+      "args": ["bucketlens", "serve"],
+      "env": {
+        "BUCKETLENS_R2_ACCOUNT_ID": "your Cloudflare account ID (or set BUCKETLENS_ENDPOINT for S3)",
+        "BUCKETLENS_BUCKET": "your-bucket",
+        "BUCKETLENS_ACCESS_KEY_ID": "...",
+        "BUCKETLENS_SECRET_ACCESS_KEY": "..."
+      }
+    }
+  }
+}
+```
+
+If you ran `bucketlens setup`, leave out `env`: the server reads the saved config.
 
 Works with Cloudflare R2, AWS S3, MinIO and other S3-compatible storage. Give it a key that can
-read the bucket and write under `.bucketlens/` (where the index lives).
+read the bucket and write under `.bucketlens/` (where the index lives). It is listed in the
+official MCP Registry as `io.github.Pritom14/bucketlens`.
 
 ## Tools the agent gets
 

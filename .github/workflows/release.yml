@@ -1,0 +1,45 @@
+name: release
+# Push a tag like v0.1.0. This builds the package, publishes it to PyPI (trusted publishing, no
+# token stored here), then lists the new version in the official MCP Registry (GitHub OIDC login).
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Versions match the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          py=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          sj=$(python3 -c "import json;d=json.load(open('server.json'));print(d['version'], d['packages'][0]['version'])")
+          echo "tag=$tag pyproject=$py server.json=$sj"
+          [ "$py" = "$tag" ] && [ "$sj" = "$tag $tag" ]
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+  mcp-registry:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - name: Wait for PyPI to serve the new version
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS "https://pypi.org/pypi/bucketlens/${GITHUB_REF_NAME#v}/json" >/dev/null && exit 0
+            sleep 10
+          done
+          exit 1
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish

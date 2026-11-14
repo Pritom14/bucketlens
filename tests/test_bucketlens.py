@@ -137,3 +137,17 @@ def test_two_sheets_needing_the_fallback(store, ix):
     for sheet in ("Notes", "More notes"):
         r = ix.query("data/orders.xlsx", f'SELECT note FROM "{sheet}" WHERE code = 40', Stats())
         assert "see the appendix" in r["table"]
+
+
+def test_release_versions_match():
+    import json
+    import re
+    from pathlib import Path
+
+    import bucketlens
+
+    root = Path(__file__).resolve().parent.parent
+    version = re.search(r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M).group(1)
+    server = json.loads((root / "server.json").read_text())
+    assert server["version"] == server["packages"][0]["version"] == version == bucketlens.__version__
+    assert server["name"] in (root / "README.md").read_text()  # the registry's PyPI ownership check
