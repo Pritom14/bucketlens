@@ -1,0 +1,146 @@
+[
+ {
+  "id": "P1",
+  "path": "nist-sp800-53r5.pdf",
+  "question": "On which page of nist-sp800-53r5.pdf does the control AC-17 (Remote Access) begin? Give the page number in the PDF file, counting the first page of the file as 1 (not the printed page label).",
+  "expect": [
+   "\\b75\\b"
+  ]
+ },
+ {
+  "id": "P2",
+  "path": "nist-sp800-53r5.pdf",
+  "question": "On which page of nist-sp800-53r5.pdf does the control SI-2 (Flaw Remediation) begin? Give the page number in the PDF file, counting the first page of the file as 1 (not the printed page label).",
+  "expect": [
+   "\\b360\\b"
+  ]
+ },
+ {
+  "id": "P3",
+  "path": "nist-sp800-53Ar5.pdf",
+  "question": "On which page of nist-sp800-53Ar5.pdf does the assessment procedure for SI-04 (System Monitoring) begin? Give the page number in the PDF file, counting the first page of the file as 1.",
+  "expect": [
+   "\\b620\\b"
+  ]
+ },
+ {
+  "id": "P4",
+  "path": "nist-sp800-53Ar5.pdf",
+  "question": "Which control's assessment procedure is on page 600 of nist-sp800-53Ar5.pdf (counting the first page of the file as 1)? Give its identifier and title.",
+  "expect": [
+   "SC-41",
+   "port"
+  ]
+ },
+ {
+  "id": "P5",
+  "path": "nist-sp800-53Ar5.pdf",
+  "question": "On which page of nist-sp800-53Ar5.pdf does the assessment procedure for CP-09 (System Backup) begin? Give the page number in the PDF file, counting the first page of the file as 1.",
+  "expect": [
+   "\\b245\\b"
+  ]
+ },
+ {
+  "id": "X1",
+  "path": "sales-2023-2025.xlsx",
+  "question": "In sales-2023-2025.xlsx, what is the total net_amount of orders in the East region with an order_date in 2025? Round to the nearest whole number.",
+  "expect": [
+   "177,?553,?926"
+  ]
+ },
+ {
+  "id": "X2",
+  "path": "sales-2023-2025.xlsx",
+  "question": "In sales-2023-2025.xlsx, how many orders have status 'returned'?",
+  "expect": [
+   "74,?985"
+  ]
+ },
+ {
+  "id": "X3",
+  "path": "sales-2023-2025.xlsx",
+  "question": "In sales-2023-2025.xlsx, which product has the highest total qty across all orders, and what is that total?",
+  "expect": [
+   "SKU-0600",
+   "11,?242"
+  ]
+ },
+ {
+  "id": "X4",
+  "path": "sales-2023-2025.xlsx",
+  "question": "In sales-2023-2025.xlsx, what are the customer and the net_amount of order ORD-0150000?",
+  "expect": [
+   "Customer 19411",
+   "2,?211\\.68"
+  ]
+ },
+ {
+  "id": "X5",
+  "path": "sales-2023-2025.xlsx",
+  "question": "In sales-2023-2025.xlsx, which sales rep has the most cancelled orders with an order_date in 2024, and how many?",
+  "expect": [
+   "Rep 045",
+   "\\b266\\b"
+  ]
+ },
+ {
+  "id": "B1",
+  "path": "sales-big-1m.xlsx",
+  "question": "In sales-big-1m.xlsx, what is the total net_amount of orders in the West region with an order_date from 1 January to 31 March 2025 (inclusive)? Round to the nearest whole number.",
+  "expect": [
+   "205,?580,?010"
+  ]
+ },
+ {
+  "id": "B2",
+  "path": "sales-big-1m.xlsx",
+  "question": "In sales-big-1m.xlsx, how many orders did 'Customer 00042' place, and what is their total net_amount?",
+  "expect": [
+   "\\b54\\b",
+   "654,?661\\.45"
+  ]
+ },
+ {
+  "id": "B3",
+  "path": "sales-big-1m.xlsx",
+  "question": "In sales-big-1m.xlsx, which month (YYYY-MM) has the most orders with status 'returned', and how many?",
+  "expect": [
+   "2024-05",
+   "8,?201"
+  ]
+ },
+ {
+  "id": "C1",
+  "path": "contracts/",
+  "question": "Across the vendor contracts in the contracts/ folder, which vendor's contract has the highest annual contract value, and what is that value?",
+  "expect": [
+   "Delta Recruitment",
+   "11,?925,?000"
+  ]
+ },
+ {
+  "id": "C2",
+  "path": "contracts/",
+  "question": "Across the vendor contracts in the contracts/ folder, how many contracts renew automatically?",
+  "expect": [
+   "\\b26\\b"
+  ]
+ },
+ {
+  "id": "C3",
+  "path": "contracts/",
+  "question": "Across the vendor contracts in the contracts/ folder, which vendors' contracts end in March 2026?",
+  "expect": [
+   "Delta Catering",
+   "Peak Cloud Hosting"
+  ]
+ },
+ {
+  "id": "C4",
+  "path": "contracts/",
+  "question": "Across the vendor contracts in the contracts/ folder, which vendor's contract has a 90-day termination notice period and names the courts at Mumbai?",
+  "expect": [
+   "Kestrel Catering"
+  ]
+ }
+]

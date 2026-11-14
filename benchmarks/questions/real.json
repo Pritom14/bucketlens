@@ -1,0 +1,85 @@
+[
+ {
+  "id": "R1",
+  "path": "real/reports/3rdqtr26.pdf",
+  "question": "In Berkshire Hathaway's third-quarter 2026 report (real/reports/3rdqtr26.pdf), what were railroad transportation revenues for the third quarter of 2026, in millions of dollars?",
+  "expect": [
+   "6,?840"
+  ]
+ },
+ {
+  "id": "R2",
+  "path": "real/reports/1stqtr26.pdf",
+  "question": "In Berkshire Hathaway's first-quarter 2026 report (real/reports/1stqtr26.pdf), what were net earnings attributable to Berkshire shareholders for the first quarter of 2026, in millions of dollars?",
+  "expect": [
+   "10,?106"
+  ]
+ },
+ {
+  "id": "R3",
+  "path": "real/reports/",
+  "question": "Across Berkshire Hathaway's 2026 quarterly reports in real/reports/ (1stqtr26.pdf, 2ndqtr26.pdf, 3rdqtr26.pdf), which quarter of 2026 had the highest net earnings attributable to Berkshire shareholders, and what was the amount in millions of dollars?",
+  "expect": [
+   "second|Q2|2nd",
+   "25,?667"
+  ]
+ },
+ {
+  "id": "R4",
+  "path": "real/reports/2025ar.pdf",
+  "question": "According to Berkshire Hathaway's 2025 annual report (real/reports/2025ar.pdf), approximately how many people did Berkshire and its operating subsidiaries employ worldwide at the end of 2025?",
+  "expect": [
+   "387,?800"
+  ]
+ },
+ {
+  "id": "R5",
+  "path": "real/reports/2025ar.pdf",
+  "question": "On which page of real/reports/2025ar.pdf (counting the first page of the file as 1, not the printed page label) does Item 7, Management's Discussion and Analysis, begin?",
+  "expect": [
+   "\\b60\\b"
+  ]
+ },
+ {
+  "id": "W1",
+  "path": "real/wdi/WDIEXCEL.xlsx",
+  "question": "In the World Bank file real/wdi/WDIEXCEL.xlsx, sheet 'Data', what is Bhutan's value for the indicator 'Access to electricity (% of population)' in 2005?",
+  "expect": [
+   "59\\.8\\b"
+  ]
+ },
+ {
+  "id": "W2",
+  "path": "real/wdi/WDIEXCEL.xlsx",
+  "question": "In the World Bank file real/wdi/WDIEXCEL.xlsx, sheet 'Data', how many rows have the indicator 'Access to electricity (% of population)' with a 2022 value of exactly 100?",
+  "expect": [
+   "\\b138\\b"
+  ]
+ },
+ {
+  "id": "W3",
+  "path": "real/wdi/WDIEXCEL.xlsx",
+  "question": "In the World Bank file real/wdi/WDIEXCEL.xlsx, sheet 'Data', for how many indicators does India have a (non-empty) value for the year 2024?",
+  "expect": [
+   "\\b752\\b"
+  ]
+ },
+ {
+  "id": "K1",
+  "path": "real/contracts/",
+  "question": "The folder real/contracts/ holds 100 commercial contracts. Which of them are governed by the laws of Arizona? Give the file names.",
+  "expect": [
+   "contract-071",
+   "contract-099"
+  ]
+ },
+ {
+  "id": "K2",
+  "path": "real/contracts/",
+  "question": "The folder real/contracts/ holds 100 commercial contracts. Which file is the distributor agreement between WatchGuard Technologies and European Micro, and what is its effective date?",
+  "expect": [
+   "contract-009",
+   "(November 5,? 1997|11/5/(19)?97|1997-11-05)"
+  ]
+ }
+]
