@@ -1,5 +1,10 @@
 # bucketlens
 
+[![ci](https://github.com/Pritom14/bucketlens/actions/workflows/ci.yml/badge.svg)](https://github.com/Pritom14/bucketlens/actions/workflows/ci.yml)
+[![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776ab)](pyproject.toml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-4f46e5)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-server-111827)](https://modelcontextprotocol.io)
+
 Let any AI agent read the documents and spreadsheets in your own S3 or R2 bucket, without
 downloading them.
 
