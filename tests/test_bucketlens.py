@@ -151,3 +151,4 @@ def test_release_versions_match():
     server = json.loads((root / "server.json").read_text())
     assert server["version"] == server["packages"][0]["version"] == version == bucketlens.__version__
     assert server["name"] in (root / "README.md").read_text()  # the registry's PyPI ownership check
+    assert len(server["description"]) <= 100  # the MCP Registry rejects longer descriptions
