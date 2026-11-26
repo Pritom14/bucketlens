@@ -9,9 +9,12 @@ and some old ones. The fix is a convention between the uploader and bucketlens:
 2. bucketlens indexes every file in the set and records the exact version (ETag) of each one in
    ``.bucketlens/sets/<folder><marker-etag>.json``. That record is written last, so a set is never
    reported ready while something is still being indexed.
-3. Agents call ``set_status(folder)``: ready / processing (and what's missing) / no marker. A ready
-   set lists each file's pinned version; passing it to the read tools reads exactly that upload,
-   even if a file has been overwritten since (bucketlens keeps the index of every version).
+3. Agents call ``set_status(folder)``: ready / processing (and what's missing) / failed / no marker.
+   A ready set lists each file's pinned version; passing it to the read tools reads exactly that
+   upload, even if a file has been overwritten since (bucketlens keeps the index of every version).
+4. If a listed file can't be parsed (corrupt, encrypted...), the set is never reported ready, but it
+   doesn't sit at "processing" forever either: once every file has been tried it is "failed", with
+   which file and why, and the files that did index. Uploading a fixed copy completes the set.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ import posixpath
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from .index import Index
+from .index import Index, Unreadable
 from .parse import kind_of
 from .store import Stats, is_missing
 
@@ -39,6 +42,15 @@ class SetIncomplete(RuntimeError):
     def __init__(self, folder: str, missing: list[str]) -> None:
         super().__init__(f"{folder or '(bucket root)'}: waiting for {len(missing)} file(s): {', '.join(missing[:10])}")
         self.folder, self.missing = folder, missing
+
+
+class SetFailed(RuntimeError):
+    """Every file is in the bucket, but some can't be parsed. Nothing changes until a fixed copy is uploaded."""
+
+    def __init__(self, folder: str, failed: dict[str, str]) -> None:
+        names = ", ".join(list(failed)[:10])
+        super().__init__(f"{folder or '(bucket root)'}: {len(failed)} file(s) can't be read: {names}")
+        self.folder, self.failed = folder, failed
 
 
 def folder_of(path: str) -> str:
@@ -117,8 +129,19 @@ def _complete(ix: Index, folder: str, workers: int = 8) -> tuple[dict, bool]:
     missing = [k for k in readable + skipped if k not in present]
     if missing:
         raise SetIncomplete(folder, missing)
+
+    def one(k):
+        try:
+            return ix.manifest(k), None
+        except Unreadable as e:  # anything else (storage, network) propagates and is retried
+            return None, e.reason
+
     with ThreadPoolExecutor(workers) as ex:
-        manifests = list(ex.map(lambda k: ix.manifest(k), readable))
+        results = list(ex.map(one, readable))
+    failed = {k: why for k, (_, why) in zip(readable, results, strict=True) if why is not None}
+    if failed:
+        raise SetFailed(folder, failed)  # no record: a set is only ever recorded when all of it is readable
+    manifests = [m for m, _ in results]
     record = {
         "folder": folder,
         "marker_etag": marker_etag,
@@ -140,7 +163,7 @@ def refresh_for(ix: Index, key: str) -> list[dict]:
         folder = folder + "/" if folder else ""
         try:
             record, created = _complete(ix, folder)
-        except (SetError, SetIncomplete):
+        except (SetError, SetIncomplete, SetFailed):
             continue
         if created:
             done.append(record)
@@ -153,7 +176,7 @@ def remove(ix: Index, folder: str) -> int:
 
 
 def status(ix: Index, folder: str, stats: Stats | None = None) -> dict:
-    """ready / processing / no_marker / invalid, with counts, pinned versions and what changed since."""
+    """ready / processing / failed / no_marker / invalid, with counts, pinned versions and what changed since."""
     folder = folder_of(folder)
     try:
         found = _read_marker(ix, folder, stats)
@@ -183,12 +206,24 @@ def status(ix: Index, folder: str, stats: Stats | None = None) -> dict:
         }
     readable, skipped = _members(ix, folder, spec, stats)
     missing = [k for k in readable + skipped if k not in current]
-    indexed = [k for k in readable if k in current and ix.manifest(k, stats, build=False) is not None]
-    return {
+    indexed, failed = {}, {}
+    for k in readable:
+        if k not in current:
+            continue
+        if ix.manifest(k, stats, build=False) is not None:
+            indexed[k] = current[k]
+        elif (why := ix.failure(k, current[k], stats)) is not None:
+            failed[k] = why
+    out = {
         "state": "processing",
         "folder": folder,
         "total": len(readable),
         "indexed": len(indexed),
         "missing": missing,
+        "failed": failed,
         "skipped": skipped,
     }
+    if failed and not missing and len(indexed) + len(failed) == len(readable):
+        # every file has been tried: say so instead of leaving the agent waiting
+        out.update(state="failed", files=indexed)
+    return out

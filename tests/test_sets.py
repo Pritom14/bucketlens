@@ -155,3 +155,86 @@ def test_cli_set_wait(store, ix, cfg, capsys):
     put_marker(store, "d/", ["missing.csv"])
     assert cli.main(["set", "d/"]) == 1
     assert "missing: d/missing.csv" in capsys.readouterr().out
+
+
+BROKEN = b"%PDF-1.7 this is not really a PDF"
+
+
+def test_unreadable_file_fails_the_set_instead_of_hanging(store, ix, monkeypatch):
+    from bucketlens import server
+
+    monkeypatch.setattr(server, "_index", ix)
+    store.put("f/good.pdf", make_pdf(["fine"]))
+    store.put("f/broken.pdf", BROKEN)
+    put_marker(store, "f/", ["good.pdf", "broken.pdf"])
+    watch.handle_event(ix, event("f/broken.pdf"))  # logged and acknowledged, not raised (no endless queue retries)
+    watch.handle_event(ix, event("f/_bucketlens.json"))
+    r = sets.status(ix, "f/")
+    assert r["state"] == "failed" and r["total"] == 2 and r["indexed"] == 1
+    assert list(r["failed"]) == ["f/broken.pdf"] and "PdfiumError" in r["failed"]["f/broken.pdf"]
+    good = {o["key"]: o["etag"] for o in store.list("f/")}["f/good.pdf"]
+    assert r["files"] == {"f/good.pdf": good}  # the rest is still readable, pinned
+    out = server.set_status("f/")
+    assert "FAILED" in out and "f/broken.pdf" in out and f"f/good.pdf  version={good}" in out
+    assert "can't be read" in server.outline("f/broken.pdf")
+
+    store.put("f/broken.pdf", make_pdf(["fixed"]))  # a fixed copy completes the set on its own
+    watch.handle_event(ix, event("f/broken.pdf"))
+    assert sets.status(ix, "f/")["state"] == "ready"
+
+
+def test_failure_is_remembered_per_version_and_not_reparsed(store, ix, monkeypatch):
+    from bucketlens import index as index_mod
+
+    calls = []
+    real = index_mod.parse_pdf
+    monkeypatch.setattr(index_mod, "parse_pdf", lambda data: calls.append(1) or real(data))
+    store.put("m/x.pdf", BROKEN)
+    for _ in range(3):
+        with pytest.raises(index_mod.Unreadable):
+            ix.manifest("m/x.pdf")
+    assert len(calls) == 1  # one download and parse; later calls answer from the recorded failure
+    monkeypatch.setattr(index_mod, "__version__", "9.9.9")  # a new bucketlens release tries again
+    with pytest.raises(index_mod.Unreadable):
+        ix.manifest("m/x.pdf")
+    assert len(calls) == 2
+
+
+def test_storage_errors_are_retried_not_recorded_as_unreadable(store, ix, monkeypatch):
+    from bucketlens import index as index_mod
+
+    store.put("t/a.pdf", make_pdf(["a"]))
+    real_get, flaky = store.get, {"t/a.pdf"}
+
+    def get(key, stats=None):
+        if key in flaky:
+            flaky.discard(key)
+            raise ConnectionError("network blip")
+        return real_get(key, stats)
+
+    monkeypatch.setattr(store, "get", get)
+    with pytest.raises(ConnectionError):
+        ix.manifest("t/a.pdf")
+    assert not isinstance(ConnectionError(), index_mod.Unreadable)
+    assert ix.manifest("t/a.pdf")["pages"] == 1  # next try works: nothing was recorded
+
+
+def test_poll_survives_an_unreadable_file_and_recovers(store, ix):
+    store.put("pf/good.csv", b"a\n1\n")
+    store.put("pf/bad.pdf", BROKEN)
+    put_marker(store, "pf/", ["good.csv", "bad.pdf"])
+    watch.run_poll(ix, 1, "pf/", once=True)  # used to crash the whole watcher
+    assert sets.status(ix, "pf/")["state"] == "failed"
+    store.put("pf/bad.pdf", make_pdf(["fixed"]))
+    watch.run_poll(ix, 1, "pf/", once=True)
+    assert sets.status(ix, "pf/")["state"] == "ready"
+
+
+def test_cli_set_exits_2_when_a_file_cant_be_read(store, ix, cfg, capsys):
+    from bucketlens import cli
+
+    store.put("cf/bad.pdf", BROKEN)
+    put_marker(store, "cf/", ["bad.pdf"])
+    assert cli.main(["set", "cf/", "--wait", "5"]) == 2
+    out = capsys.readouterr().out
+    assert "cf/: failed" in out and "cf/bad.pdf" in out

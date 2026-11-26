@@ -84,7 +84,8 @@ def cmd_index(a) -> int:
 
 
 def cmd_set(a) -> int:
-    """Status of an upload set; with --wait, block until it's ready (for upload scripts)."""
+    """Status of an upload set; with --wait, block until it's ready (for upload scripts).
+    Exit 0: ready. 1: not ready (yet). 2: a file in it can't be read, so waiting won't help."""
     from . import sets
 
     ix = _index()
@@ -98,6 +99,8 @@ def cmd_set(a) -> int:
             except sets.SetIncomplete:
                 time.sleep(min(5.0, max(0.0, deadline - time.monotonic())))
                 continue
+            except sets.SetFailed:
+                r = sets.status(ix, r["folder"])
         break
     name = r["folder"] or "(bucket root)"
     if r["state"] == "ready":
@@ -109,6 +112,11 @@ def cmd_set(a) -> int:
         if r["deleted_since"]:
             print("  deleted since: " + ", ".join(r["deleted_since"]))
         return 0
+    if r["state"] == "failed":
+        print(f"{name}: failed, {len(r['failed'])} of {r['total']} files can't be read (upload fixed copies)")
+        for k, why in r["failed"].items():
+            print(f"  {k}: {why}")
+        return 2
     if r["state"] == "processing":
         print(f"{name}: processing, {r['indexed']} of {r['total']} indexed; missing: {', '.join(r['missing']) or '-'}")
     elif r["state"] == "invalid":
@@ -176,7 +184,12 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="files, index coverage and storage used").set_defaults(fn=cmd_status)
     s = sub.add_parser("set", help="is an upload set (folder with a _bucketlens.json marker) fully indexed?")
     s.add_argument("folder")
-    s.add_argument("--wait", type=int, default=0, help="wait up to N seconds for it to be ready (exit 0 if ready)")
+    s.add_argument(
+        "--wait",
+        type=int,
+        default=0,
+        help="wait up to N seconds for it to be ready (exit 0 ready, 1 not yet, 2 a file can't be read)",
+    )
     s.set_defaults(fn=cmd_set)
     a = p.parse_args(argv)
     try:
