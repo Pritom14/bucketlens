@@ -44,10 +44,22 @@ class Index:
     def prefix(key: str, etag: str) -> str:
         return f"{ROOT}/{key}/{etag}/"
 
-    def manifest(self, key: str, stats: Stats | None = None, build: bool = True) -> dict | None:
-        """The index manifest for the current version of ``key``; built (one full read) if missing."""
+    def manifest(
+        self, key: str, stats: Stats | None = None, build: bool = True, etag: str | None = None
+    ) -> dict | None:
+        """The index manifest for the current version of ``key``; built (one full read) if missing.
+
+        With ``etag``, the manifest of that exact version instead (e.g. one pinned by an upload set).
+        It is never built: an old version's bytes are gone, only its index can remain."""
         if key.startswith(".bucketlens/"):
             raise NotIndexable("that is bucketlens' own index data")
+        if etag:
+            try:
+                return json.loads(self.store.get(self.prefix(key, etag) + "manifest.json", stats))
+            except Exception as e:
+                if is_missing(e):
+                    raise NotIndexable(f"{key} has no index for version {etag}") from None
+                raise
         meta = self.store.head(key, stats)
         try:
             return json.loads(self.store.get(self.prefix(key, meta["etag"]) + "manifest.json", stats))
@@ -109,14 +121,14 @@ class Index:
 
     # -- PDFs -------------------------------------------------------------------------------------
 
-    def _pdf(self, key: str, stats: Stats) -> dict:
-        m = self.manifest(key, stats)
+    def _pdf(self, key: str, stats: Stats, etag: str | None = None) -> dict:
+        m = self.manifest(key, stats, etag=etag)
         if m["kind"] != "pdf":
             raise NotIndexable(f"{key} is not a PDF")
         return m
 
-    def outline(self, key: str, stats: Stats) -> dict:
-        m = self.manifest(key, stats)
+    def outline(self, key: str, stats: Stats, etag: str | None = None) -> dict:
+        m = self.manifest(key, stats, etag=etag)
         if m["kind"] == "pdf":
             return {
                 "kind": "pdf",
@@ -127,8 +139,8 @@ class Index:
             }
         return {"kind": "table", "sheets": [{k: s[k] for k in ("name", "rows", "columns")} for s in m["sheets"]]}
 
-    def read_pages(self, key: str, pages: str, stats: Stats) -> dict:
-        m = self._pdf(key, stats)
+    def read_pages(self, key: str, pages: str, stats: Stats, etag: str | None = None) -> dict:
+        m = self._pdf(key, stats, etag)
         want = parse_pages(pages, m["pages"])
         runs: list[list[int]] = []
         for p in want:  # neighbouring pages come back in one range request
@@ -159,8 +171,10 @@ class Index:
         except re.error:
             return re.compile(re.escape(text), re.IGNORECASE)
 
-    def search(self, key: str, text: str, stats: Stats, max_hits: int = 20, context: int = 60) -> dict:
-        m = self._pdf(key, stats)
+    def search(
+        self, key: str, text: str, stats: Stats, max_hits: int = 20, context: int = 60, etag: str | None = None
+    ) -> dict:
+        m = self._pdf(key, stats, etag)
         pat, hits, total = self._pattern(text), [], 0
         for i, page in enumerate(self._page_texts(m, stats), start=1):
             for mt in pat.finditer(page):
@@ -230,9 +244,9 @@ class Index:
                 self._conns[k] = con
         return con
 
-    def query(self, key: str, sql: str, stats: Stats, max_rows: int = 200) -> dict:
+    def query(self, key: str, sql: str, stats: Stats, max_rows: int = 200, etag: str | None = None) -> dict:
         """Read-only SQL over the sheets of a workbook (each sheet is a table named after it)."""
-        m = self.manifest(key, stats)
+        m = self.manifest(key, stats, etag=etag)
         if m["kind"] != "table":
             raise NotIndexable(f"{key} is not a spreadsheet")
         t0 = time.perf_counter()
@@ -250,11 +264,11 @@ class Index:
         table += ["| " + " | ".join("" if v is None else str(v).replace("|", "\\|") for v in r) + " |" for r in rows]
         return {"columns": cols, "rows": len(rows), "truncated": truncated, "table": "\n".join(table)}
 
-    def read_rows(self, key: str, sheet: str, first: int, last: int, stats: Stats) -> dict:
+    def read_rows(self, key: str, sheet: str, first: int, last: int, stats: Stats, etag: str | None = None) -> dict:
         last = min(int(last), int(first) + 499)
         name = sheet.replace('"', '""')
         sql = (
             f'SELECT * EXCLUDE (_row), _row AS row_number FROM "{name}" '
             f"WHERE _row BETWEEN {int(first)} AND {last} ORDER BY _row"
         )
-        return self.query(key, sql, stats, max_rows=500)
+        return self.query(key, sql, stats, max_rows=500, etag=etag)

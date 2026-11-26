@@ -106,6 +106,9 @@ official MCP Registry as `io.github.Pritom14/bucketlens`.
 | `read_pages(path, pages)` | text of specific pages, e.g. `"36-38"` |
 | `query(path, sql)` | read-only SQL over a spreadsheet or CSV; each sheet is a table |
 | `read_rows(path, sheet, first, last)` | rows by the spreadsheet's own row numbers |
+| `set_status(folder)` | whether a group of files uploaded together is fully indexed, and each file's version ([upload sets](#upload-sets)) |
+
+The read tools also take an optional `version`: a file's ETag from `set_status`, to read exactly that upload.
 
 ## How it works
 
@@ -136,6 +139,47 @@ edited workbook 4.4 s after it was saved, and a deleted file's index removed 3 s
 up: create a Queue, add an event notification on the bucket (object creation and deletion) that
 sends to it, and add a Cloudflare API token with **Account > Queues > Edit** to the config as
 `BUCKETLENS_CF_API_TOKEN`, with `BUCKETLENS_CF_QUEUE` set to the queue's name.
+
+## Upload sets
+
+S3 has no multi-file transactions. If you upload a report PDF and its spreadsheet together, an agent
+reading during the upload can see the new PDF and the old spreadsheet. Upload sets fix that with a
+marker file:
+
+1. Upload the files, then write `_bucketlens.json` into the folder **last**:
+
+   ```json
+   {"files": ["report.pdf", "numbers.xlsx"]}
+   ```
+
+   Paths are relative to the folder. `{}` means every file under the folder.
+2. `watch` (queue or `--poll`) or `bucketlens index` indexes every file in the set and records the
+   exact version (ETag) of each one. The record is written last, so a set is never reported ready
+   while something is still being indexed. If the marker lands before some files, each file
+   completes the set when it arrives.
+3. The agent calls `set_status("reports/2026-q3/")`:
+
+   ```text
+   reports/2026-q3/: READY, 2 files indexed (completed 2026-11-26T04:20:34+00:00).
+   - reports/2026-q3/numbers.xlsx  version=a7838b168641ddb5dcd1582db071fb6d
+   - reports/2026-q3/report.pdf  version=10d509ea82fced64bb1e62ab647131c6
+   ```
+
+   or `STILL PROCESSING, 1 of 2 readable files indexed` with what hasn't arrived yet.
+
+Passing a `version` to `outline`, `search`, `read_pages`, `query` or `read_rows` reads that upload's
+copy even if the file has been replaced since: bucketlens keeps the index of every version, so no
+bucket versioning is needed. (If a file is deleted, its index goes with it, and `set_status` says so.)
+Writing the marker again starts a new set, so the next upload into the same folder works the same way.
+
+Upload scripts can wait for a set without running `watch`:
+
+```bash
+bucketlens set reports/2026-q3/ --wait 300   # exit 0 once ready; completes the set itself if needed
+```
+
+Files in a set that bucketlens can't read (anything but PDF, XLSX and CSV) are listed as skipped and
+don't block it.
 
 ## Costs
 

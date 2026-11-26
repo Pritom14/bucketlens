@@ -15,6 +15,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+from . import sets
 from .config import Config
 from .index import Index
 from .parse import kind_of
@@ -138,9 +139,32 @@ def _lag(event: dict) -> str:
         return ""
 
 
+def _log_set(record: dict) -> None:
+    extra = f", {len(record['skipped'])} not readable" if record.get("skipped") else ""
+    log(f"upload set {record['folder'] or '(bucket root)'} ready: {len(record['files'])} files indexed{extra}")
+
+
+def handle_marker(ix: Index, key: str, action: str) -> None:
+    folder = sets.folder_of(key)
+    if action in CREATE:
+        try:
+            record, created = sets._complete(ix, folder)
+            if created:
+                _log_set(record)
+        except sets.SetIncomplete as e:
+            log(f"upload set {e} (each file completes the set when it lands)")
+        except sets.SetError as e:
+            log(f"upload set ignored: {e}")
+    elif action in DELETE:
+        log(f"removed the upload set records of {folder or '(bucket root)'} ({sets.remove(ix, folder)} objects)")
+
+
 def handle_event(ix: Index, event: dict) -> None:
     key, action = (event.get("object") or {}).get("key", ""), event.get("action", "")
     if skip(key):
+        return
+    if sets.is_marker(key):
+        handle_marker(ix, key, action)
         return
     if action in CREATE and kind_of(key):
         t = time.perf_counter()
@@ -149,6 +173,9 @@ def handle_event(ix: Index, event: dict) -> None:
         log(f"indexed {key} ({what}) in {time.perf_counter() - t:.1f}s{_lag(event)}")
     elif action in DELETE:
         log(f"removed the index of deleted {key} ({ix.remove(key)} objects)")
+    if action in CREATE:  # a set that was waiting on this file can complete now
+        for record in sets.refresh_for(ix, key):
+            _log_set(record)
 
 
 def run_queue(ix: Index, cfg: Config, once: bool = False) -> None:
@@ -186,8 +213,10 @@ def run_poll(ix: Index, seconds: int, prefix: str = "", once: bool = False) -> N
     """List the bucket every ``seconds`` and index files whose ETag has no index yet (one LIST per 1,000 files)."""
     log(f"polling bucket {ix.store.bucket} every {seconds}s")
     seen: dict[str, str] = {}
+    seen_markers: dict[str, str] = {}
     while True:
-        current = {o["key"]: o["etag"] for o in ix.store.list(prefix) if not skip(o["key"]) and kind_of(o["key"])}
+        listing = [o for o in ix.store.list(prefix) if not skip(o["key"])]
+        current = {o["key"]: o["etag"] for o in listing if kind_of(o["key"])}
         for key, etag in current.items():
             if seen.get(key) != etag:
                 try:
@@ -201,6 +230,24 @@ def run_poll(ix: Index, seconds: int, prefix: str = "", once: bool = False) -> N
         for key in set(seen) - set(current):
             log(f"removed the index of deleted {key} ({ix.remove(key)} objects)")
         seen = current
+        markers = {o["key"]: o["etag"] for o in listing if sets.is_marker(o["key"])}
+        for key, etag in markers.items():
+            if seen_markers.get(key) == etag:
+                continue
+            try:
+                record, created = sets._complete(ix, sets.folder_of(key))
+                if created:
+                    _log_set(record)
+                seen_markers[key] = etag
+            except sets.SetIncomplete as e:
+                log(f"upload set {e}")  # not marked seen: checked again next pass
+            except sets.SetError as e:
+                log(f"upload set ignored: {e}")
+                seen_markers[key] = etag  # until the marker changes
+        for key in set(seen_markers) - set(markers):
+            folder = sets.folder_of(key)
+            log(f"removed the upload set records of {folder or '(bucket root)'} ({sets.remove(ix, folder)} objects)")
+            del seen_markers[key]
         if once:
             return
         time.sleep(seconds)
