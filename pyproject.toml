@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bucketlens"
-version = "0.1.0"
+version = "0.2.0"
 description = "Let any AI agent read the documents and spreadsheets in your own S3 or R2 bucket: outlines, pages, rows, SQL and search, without downloading the files."
 readme = "README.md"
 license = "Apache-2.0"
