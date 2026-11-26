@@ -1,4 +1,4 @@
-"""bucketlens command line: setup, index, serve, watch, status."""
+"""bucketlens command line: setup, index, serve, watch, status, set."""
 
 from __future__ import annotations
 
@@ -63,13 +63,59 @@ def _index():
 
 
 def cmd_index(a) -> int:
+    from . import sets
+
     t = time.perf_counter()
-    res = _index().index_all(a.prefix, workers=a.workers)
+    ix = _index()
+    res = ix.index_all(a.prefix, workers=a.workers)
     bad = [(k, s) for k, s in res if s != "ok"]
     for k, s in bad:
         print(f"failed: {k}: {s}")
     print(f"indexed {len(res) - len(bad)} of {len(res)} files in {time.perf_counter() - t:.0f}s")
+    for o in ix.store.list(a.prefix):
+        if sets.is_marker(o["key"]):
+            folder = sets.folder_of(o["key"])
+            try:
+                r = sets.complete(ix, folder)
+                print(f"upload set {folder or '(bucket root)'}: ready, {len(r['files'])} files")
+            except (sets.SetIncomplete, sets.SetError) as e:
+                print(f"upload set {e}")
     return 1 if bad else 0
+
+
+def cmd_set(a) -> int:
+    """Status of an upload set; with --wait, block until it's ready (for upload scripts)."""
+    from . import sets
+
+    ix = _index()
+    deadline = time.monotonic() + a.wait
+    while True:
+        r = sets.status(ix, a.folder)
+        if r["state"] == "processing" and time.monotonic() < deadline:
+            try:  # don't rely on a watcher: finish the set here if every file is in the bucket
+                sets.complete(ix, r["folder"])
+                continue
+            except sets.SetIncomplete:
+                time.sleep(min(5.0, max(0.0, deadline - time.monotonic())))
+                continue
+        break
+    name = r["folder"] or "(bucket root)"
+    if r["state"] == "ready":
+        print(f"{name}: ready, {len(r['files'])} files (completed {r['completed']})")
+        for k, v in r["files"].items():
+            print(f"  {k}  version={v}")
+        if r["changed_since"]:
+            print("  replaced since: " + ", ".join(r["changed_since"]))
+        if r["deleted_since"]:
+            print("  deleted since: " + ", ".join(r["deleted_since"]))
+        return 0
+    if r["state"] == "processing":
+        print(f"{name}: processing, {r['indexed']} of {r['total']} indexed; missing: {', '.join(r['missing']) or '-'}")
+    elif r["state"] == "invalid":
+        print(f"{name}: invalid marker: {r['error']}")
+    else:
+        print(f"{name}: no {sets.MARKER} marker")
+    return 1
 
 
 def cmd_serve(a) -> int:
@@ -128,6 +174,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--once", action="store_true")
     s.set_defaults(fn=cmd_watch)
     sub.add_parser("status", help="files, index coverage and storage used").set_defaults(fn=cmd_status)
+    s = sub.add_parser("set", help="is an upload set (folder with a _bucketlens.json marker) fully indexed?")
+    s.add_argument("folder")
+    s.add_argument("--wait", type=int, default=0, help="wait up to N seconds for it to be ready (exit 0 if ready)")
+    s.set_defaults(fn=cmd_set)
     a = p.parse_args(argv)
     try:
         return a.fn(a)
