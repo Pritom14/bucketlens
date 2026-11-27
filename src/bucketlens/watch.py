@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from . import sets
 from .config import Config
-from .index import Index
+from .index import Index, Unreadable
 from .parse import kind_of
 from .store import Stats
 
@@ -153,6 +153,8 @@ def handle_marker(ix: Index, key: str, action: str) -> None:
                 _log_set(record)
         except sets.SetIncomplete as e:
             log(f"upload set {e} (each file completes the set when it lands)")
+        except sets.SetFailed as e:
+            log(f"upload set {e} (set_status reports it; uploading a fixed copy completes the set)")
         except sets.SetError as e:
             log(f"upload set ignored: {e}")
     elif action in DELETE:
@@ -168,7 +170,11 @@ def handle_event(ix: Index, event: dict) -> None:
         return
     if action in CREATE and kind_of(key):
         t = time.perf_counter()
-        m = ix.manifest(key, Stats())
+        try:
+            m = ix.manifest(key, Stats())
+        except Unreadable as e:  # recorded; retrying the event can't help, a new upload of the file will
+            log(f"{e}")
+            return
         what = f"{m['pages']} pages" if m["kind"] == "pdf" else f"{sum(s['rows'] for s in m['sheets']):,} rows"
         log(f"indexed {key} ({what}) in {time.perf_counter() - t:.1f}s{_lag(event)}")
     elif action in DELETE:
@@ -217,6 +223,7 @@ def run_poll(ix: Index, seconds: int, prefix: str = "", once: bool = False) -> N
     while True:
         listing = [o for o in ix.store.list(prefix) if not skip(o["key"])]
         current = {o["key"]: o["etag"] for o in listing if kind_of(o["key"])}
+        touched, retry = [], set()  # files whose new version was handled this pass / hit a storage error
         for key, etag in current.items():
             if seen.get(key) != etag:
                 try:
@@ -224,26 +231,36 @@ def run_poll(ix: Index, seconds: int, prefix: str = "", once: bool = False) -> N
                     ix.manifest(key, Stats())
                     if key in seen:
                         log(f"re-indexed changed {key} in {time.perf_counter() - t:.1f}s")
+                except Unreadable as e:
+                    log(f"{e}")  # recorded for this version; not retried until the file changes
                 except Exception as e:
-                    log(f"failed on {key}: {type(e).__name__}: {str(e)[:200]}")
+                    log(f"failed on {key}: {type(e).__name__}: {str(e)[:200]} (retrying next pass)")
+                    retry.add(key)
                     continue
+                touched.append(key)
         for key in set(seen) - set(current):
             log(f"removed the index of deleted {key} ({ix.remove(key)} objects)")
-        seen = current
+        seen = {k: ("" if k in retry else v) for k, v in current.items()}  # "" never matches: tried again
         markers = {o["key"]: o["etag"] for o in listing if sets.is_marker(o["key"])}
         for key, etag in markers.items():
-            if seen_markers.get(key) == etag:
-                continue
+            folder = sets.folder_of(key)
+            if seen_markers.get(key) == etag and not any(k.startswith(folder) for k in touched):
+                continue  # neither the marker nor any file under it changed
             try:
-                record, created = sets._complete(ix, sets.folder_of(key))
+                record, created = sets._complete(ix, folder)
                 if created:
                     _log_set(record)
                 seen_markers[key] = etag
             except sets.SetIncomplete as e:
                 log(f"upload set {e}")  # not marked seen: checked again next pass
+            except sets.SetFailed as e:
+                log(f"upload set {e} (uploading a fixed copy completes it)")
+                seen_markers[key] = etag  # checked again when a file under it changes
             except sets.SetError as e:
                 log(f"upload set ignored: {e}")
                 seen_markers[key] = etag  # until the marker changes
+            except Exception as e:  # storage hiccup: don't take the watcher down, try again next pass
+                log(f"upload set {folder or '(bucket root)'}: {type(e).__name__}: {str(e)[:200]} (retrying next pass)")
         for key in set(seen_markers) - set(markers):
             folder = sets.folder_of(key)
             log(f"removed the upload set records of {folder or '(bucket root)'} ({sets.remove(ix, folder)} objects)")

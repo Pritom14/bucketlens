@@ -178,8 +178,24 @@ Upload scripts can wait for a set without running `watch`:
 bucketlens set reports/2026-q3/ --wait 300   # exit 0 once ready; completes the set itself if needed
 ```
 
-Files in a set that bucketlens can't read (anything but PDF, XLSX and CSV) are listed as skipped and
+Files in a set that bucketlens doesn't read (anything but PDF, XLSX and CSV) are listed as skipped and
 don't block it.
+
+If a listed file can't be parsed (a corrupt or password-protected PDF, a broken spreadsheet), the set
+is never reported ready, but it doesn't sit at "processing" forever either. Once every file has been
+tried, `set_status` says so, and the agent stops waiting:
+
+```text
+reports/2026-q3/: FAILED. 1 of 2 files in this upload can't be read, so it will never be ready as uploaded. ...
+- reports/2026-q3/report.pdf: PdfiumError: Failed to load document (PDFium: Data format error).
+Indexed and readable (pass version= to pin this upload's copy):
+- reports/2026-q3/numbers.xlsx  version=a7838b168641ddb5dcd1582db071fb6d
+```
+
+The failure is recorded for that exact version of the file, so it isn't downloaded and parsed again on
+every call. Uploading a fixed copy completes the set on its own, and `bucketlens set --wait` exits 2
+instead of waiting out its timeout. Storage and network errors are never recorded as failures; they are
+retried.
 
 ## Costs
 

@@ -21,6 +21,7 @@ from pathlib import Path
 
 import duckdb
 
+from . import __version__
 from .parse import kind_of, parse_pages, parse_pdf, parse_table_file
 from .store import Stats, Store, is_missing
 
@@ -29,6 +30,15 @@ ROOT = ".bucketlens/index"
 
 class NotIndexable(ValueError):
     pass
+
+
+class Unreadable(NotIndexable):
+    """This version of the file can't be parsed (corrupt, encrypted, not really a PDF...). Recorded, so it
+    isn't downloaded and parsed again; a new upload of the file (new ETag) or a new bucketlens release retries."""
+
+    def __init__(self, key: str, reason: str) -> None:
+        super().__init__(f"{key} can't be read: {reason}")
+        self.key, self.reason = key, reason
 
 
 class Index:
@@ -66,7 +76,22 @@ class Index:
         except Exception as e:
             if not is_missing(e):
                 raise
-        return self.build(key, meta, stats) if build else None
+        if not build:
+            return None
+        reason = self.failure(key, meta["etag"], stats)
+        if reason is not None:
+            raise Unreadable(key, reason)
+        return self.build(key, meta, stats)
+
+    def failure(self, key: str, etag: str, stats: Stats | None = None) -> str | None:
+        """Why this version of ``key`` couldn't be parsed, if it couldn't (and the failure is from this release)."""
+        try:
+            rec = json.loads(self.store.get(self.prefix(key, etag) + "error.json", stats))
+        except Exception as e:
+            if is_missing(e):
+                return None
+            raise
+        return rec["error"] if rec.get("bucketlens") == __version__ else None
 
     def build(self, key: str, meta: dict | None = None, stats: Stats | None = None) -> dict:
         kind = kind_of(key)
@@ -74,21 +99,29 @@ class Index:
             raise NotIndexable(f"{key}: bucketlens reads PDF, XLSX and CSV files")
         meta = meta or self.store.head(key, stats)
         t0 = time.perf_counter()
-        data = self.store.get(key, stats)
+        data = self.store.get(key, stats)  # a storage error here propagates and is retried, never recorded
         prefix = self.prefix(key, meta["etag"])
-        if kind == "pdf":
-            parsed = parse_pdf(data)
-            self.store.put(prefix + "pages.txt", parsed.pop("text"), "text/plain; charset=utf-8")
-            m = {"kind": "pdf", **parsed, "text_key": prefix + "pages.txt"}
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                tables = parse_table_file(data, kind, Path(tmp), Path(key).stem)
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                parsed = parse_pdf(data) if kind == "pdf" else parse_table_file(data, kind, Path(tmp), Path(key).stem)
+            except MemoryError:
+                raise
+            except Exception as e:  # the bytes themselves are bad: record it for this version
+                reason = f"{type(e).__name__}: {str(e).splitlines()[0][:300] if str(e) else 'no details'}"
+                rec = {"key": key, "etag": meta["etag"], "error": reason, "bucketlens": __version__}
+                self.store.put(prefix + "error.json", json.dumps(rec).encode(), "application/json")
+                raise Unreadable(key, reason) from None
+            if kind == "pdf":
+                self.store.put(prefix + "pages.txt", parsed.pop("text"), "text/plain; charset=utf-8")
+                m = {"kind": "pdf", **parsed, "text_key": prefix + "pages.txt"}
+            else:
+                tables = parsed
                 sheets = []
                 for t in tables:
                     pkey = prefix + f"sheets/{t['path'].name}"
                     self.store.put(pkey, t["path"].read_bytes(), "application/vnd.apache.parquet")
                     sheets.append({"name": t["name"], "rows": t["rows"], "columns": t["columns"], "parquet_key": pkey})
-            m = {"kind": "table", "sheets": sheets}
+                m = {"kind": "table", "sheets": sheets}
         m.update(
             {
                 "key": key,

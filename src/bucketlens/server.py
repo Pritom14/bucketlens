@@ -167,8 +167,9 @@ def read_rows(path: str, sheet: str, first_row: int, last_row: int, version: str
 @_guard
 def set_status(folder: str) -> str:
     """Is a group of files uploaded together fully indexed? Works when the uploader wrote a _bucketlens.json
-    marker last in the folder. Says ready / still processing (and what's missing) / no marker. A ready upload
-    lists each file's version: pass it as `version` to outline, search, read_pages, query or read_rows to read
+    marker last in the folder. Says ready / still processing (and what's missing) / failed (a file can't be
+    parsed, so it will never be ready as uploaded: stop waiting) / no marker. Ready and failed uploads list each
+    readable file's version: pass it as `version` to outline, search, read_pages, query or read_rows to read
     exactly that upload, even if a file was replaced afterwards."""
     st = Stats()
     r = sets.status(index(), folder, st)
@@ -184,7 +185,21 @@ def set_status(folder: str) -> str:
         lines = [f"{name}: STILL PROCESSING, {r['indexed']} of {r['total']} readable files indexed."]
         if r["missing"]:
             lines.append("Not uploaded yet: " + ", ".join(r["missing"][:20]))
+        if r["failed"]:
+            lines.append("Can't be read (needs a fixed upload): " + ", ".join(list(r["failed"])[:20]))
         lines.append("Call set_status again in a little while before relying on this folder.")
+        return "\n".join(lines)
+    if r["state"] == "failed":
+        n = len(r["failed"])
+        lines = [
+            f"{name}: FAILED. {n} of {r['total']} files in this upload can't be read, so it will never be ready "
+            "as uploaded. Don't wait for it; tell the user which files need re-uploading."
+        ]
+        lines += [f"- {k}: {why}" for k, why in r["failed"].items()]
+        if r["files"]:
+            lines.append("Indexed and readable (pass version= to pin this upload's copy):")
+            lines += [f"- {k}  version={v}" for k, v in r["files"].items()]
+        lines.append("Once a fixed copy of each failed file is uploaded, the set completes on its own.")
         return "\n".join(lines)
     lines = [f"{name}: READY, {len(r['files'])} files indexed (completed {r['completed']})."]
     lines += [f"- {k}  version={v}" for k, v in r["files"].items()]
